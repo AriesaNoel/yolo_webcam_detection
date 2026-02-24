@@ -5,7 +5,6 @@ import cv2
 from PIL import Image
 
 st.write("NEW VERSION DEPLOYED ✅")
-st.write("Output shape:", outputs[0].shape)
 
 
 st.set_page_config(page_title="YOLOv5 ONNX Detection")
@@ -41,6 +40,9 @@ if camera_image is not None:
         None,
         {session.get_inputs()[0].name: img_resized}
     )
+
+    st.write("Output shape:", outputs[0].shape)
+
 
     st.image(image, caption="Image Captured")
     st.success("Model ran successfully! 🎉")
