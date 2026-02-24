@@ -1,3 +1,5 @@
+st.write("NEW VERSION DEPLOYED ✅")
+
 import streamlit as st
 import onnxruntime as ort
 import numpy as np
