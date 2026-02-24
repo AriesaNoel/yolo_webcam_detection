@@ -1,10 +1,12 @@
-st.write("NEW VERSION DEPLOYED ✅")
-
 import streamlit as st
 import onnxruntime as ort
 import numpy as np
 import cv2
 from PIL import Image
+
+st.write("NEW VERSION DEPLOYED ✅")
+st.write("Output shape:", outputs[0].shape)
+
 
 st.set_page_config(page_title="YOLOv5 ONNX Detection")
 st.title("🔥 YOLOv5 Webcam Object Detection (ONNX)")
