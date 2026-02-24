@@ -3,7 +3,10 @@ import onnxruntime as ort
 import numpy as np
 import cv2
 from PIL import Image
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import av
 
+# ---------------- CLASS NAMES ----------------
 class_names = [
     "person","bicycle","car","motorcycle","airplane","bus","train","truck",
     "boat","traffic light","fire hydrant","stop sign","parking meter","bench",
@@ -19,10 +22,9 @@ class_names = [
 ]
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="YOLOv5 ONNX Detection", layout="wide")
-
-st.title("🔥 YOLOv5 Webcam Object Detection (ONNX)")
-st.markdown("Deployed using ONNX Runtime on Streamlit Cloud")
+st.set_page_config(page_title="YOLOv5 Live Detection", layout="wide")
+st.title("🔥 YOLOv5 ONNX Object Detection")
+st.markdown("Live + Photo Detection Modes")
 
 # ---------------- CONFIDENCE SLIDER ----------------
 confidence_threshold = st.sidebar.slider(
@@ -33,34 +35,39 @@ confidence_threshold = st.sidebar.slider(
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    session = ort.InferenceSession(
+    return ort.InferenceSession(
         "best.onnx",
         providers=["CPUExecutionProvider"]
     )
-    return session
 
 session = load_model()
 
-# ---------------- POSTPROCESS FUNCTION ----------------
-def postprocess(predictions, original_image):
+# ---------------- DETECTION FUNCTION ----------------
+def detect(image):
+    img_h, img_w = image.shape[:2]
+
+    img_resized = cv2.resize(image, (640, 640))
+    img_resized = img_resized.transpose(2, 0, 1)
+    img_resized = np.expand_dims(img_resized, axis=0).astype(np.float32)
+    img_resized /= 255.0
+
+    outputs = session.run(
+        None,
+        {session.get_inputs()[0].name: img_resized}
+    )
+
+    pred = outputs[0]
+
+    if pred.shape[1] == 85:
+        pred = np.transpose(pred, (0, 2, 1))
+
+    pred = pred[0]
+
     boxes = []
     scores = []
     class_ids = []
 
-    pred = predictions[0]
-
-    # If shape is (1, 85, 25200), transpose it
-    if pred.shape[1] == 85:
-        pred = np.transpose(pred, (0, 2, 1))
-
-    pred = pred[0]  # remove batch
-
-    img_h, img_w = original_image.shape[:2]
-
     for det in pred:
-        if len(det) < 6:
-            continue
-
         obj_conf = det[4]
         class_scores = det[5:]
 
@@ -95,51 +102,49 @@ def postprocess(predictions, original_image):
                 x, y, w, h = boxes[i]
                 label = f"{class_names[class_ids[i]]}: {scores[i]:.2f}"
 
-                cv2.rectangle(original_image, (x, y), (x+w, y+h), (0,255,0), 2)
+                cv2.rectangle(image, (x, y), (x+w, y+h), (0,255,0), 2)
                 cv2.putText(
-                    original_image,
+                    image,
                     label,
                     (x, y - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
+                    0.6,
                     (0,255,0),
                     2
                 )
 
-    return original_image
+    return image
 
-# ---------------- WEBCAM INPUT ----------------
-camera_image = st.camera_input("Capture Image")
+# ---------------- MODE SELECTION ----------------
+mode = st.radio("Select Mode:", ["📸 Capture Image", "🎥 Live Webcam"])
 
-if camera_image is not None:
-    image = Image.open(camera_image)
-    img = np.array(image)
+# ---------------- IMAGE MODE ----------------
+if mode == "📸 Capture Image":
+    camera_image = st.camera_input("Capture Image")
 
-    # Resize to YOLO input size
-    img_resized = cv2.resize(img, (640, 640))
+    if camera_image is not None:
+        image = Image.open(camera_image)
+        img_np = np.array(image)
 
-    # Convert HWC → CHW
-    img_resized = img_resized.transpose(2, 0, 1)
+        result = detect(img_np.copy())
 
-    # Add batch dimension
-    img_resized = np.expand_dims(img_resized, axis=0).astype(np.float32)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(image, caption="Original")
+        with col2:
+            st.image(result, caption="Detection Result")
 
-    # Normalize
-    img_resized /= 255.0
+# ---------------- LIVE MODE ----------------
+elif mode == "🎥 Live Webcam":
 
-    # Run inference
-    outputs = session.run(
-        None,
-        {session.get_inputs()[0].name: img_resized}
+    class VideoProcessor(VideoTransformerBase):
+        def transform(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            result = detect(img)
+            return result
+
+    webrtc_streamer(
+        key="live",
+        video_processor_factory=VideoProcessor,
+        media_stream_constraints={"video": True, "audio": False},
     )
-
-    # Postprocess & draw boxes
-    result_img = postprocess(outputs, img.copy())
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.image(image, caption="Original Image")
-
-    with col2:
-        st.image(result_img, caption="Detection Result")
