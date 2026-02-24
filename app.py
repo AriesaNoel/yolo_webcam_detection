@@ -1,26 +1,42 @@
-from ultralytics import YOLO
 import streamlit as st
-from PIL import Image
+import onnxruntime as ort
 import numpy as np
+import cv2
+from PIL import Image
 
-st.set_page_config(page_title="Live YOLO Detection")
-
-st.title("🔥 Live Webcam Object Detection")
+st.set_page_config(page_title="YOLOv5 ONNX Detection")
+st.title("🔥 YOLOv5 Webcam Object Detection (ONNX)")
 
 @st.cache_resource
 def load_model():
-    model = YOLO("best.pt")
-    return model
+    session = ort.InferenceSession("best.onnx")
+    return session
 
-model = load_model()
+session = load_model()
 
 camera_image = st.camera_input("Capture Image")
 
 if camera_image is not None:
     image = Image.open(camera_image)
+    img = np.array(image)
 
-    results = model(image)
+    # Resize to YOLO input size
+    img_resized = cv2.resize(img, (640, 640))
 
-    result_image = results[0].plot()
+    # Convert HWC to CHW
+    img_resized = img_resized.transpose(2, 0, 1)
 
-    st.image(result_image, caption="Detected Objects")
+    # Add batch dimension
+    img_resized = np.expand_dims(img_resized, axis=0).astype(np.float32)
+
+    # Normalize
+    img_resized /= 255.0
+
+    # Run inference
+    outputs = session.run(
+        None,
+        {session.get_inputs()[0].name: img_resized}
+    )
+
+    st.image(image, caption="Image Captured")
+    st.success("Model ran successfully! 🎉")
