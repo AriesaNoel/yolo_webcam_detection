@@ -4,6 +4,20 @@ import numpy as np
 import cv2
 from PIL import Image
 
+class_names = [
+    "person","bicycle","car","motorcycle","airplane","bus","train","truck",
+    "boat","traffic light","fire hydrant","stop sign","parking meter","bench",
+    "bird","cat","dog","horse","sheep","cow","elephant","bear","zebra","giraffe",
+    "backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard",
+    "sports ball","kite","baseball bat","baseball glove","skateboard","surfboard",
+    "tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl",
+    "banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza",
+    "donut","cake","chair","couch","potted plant","bed","dining table","toilet",
+    "tv","laptop","mouse","remote","keyboard","cell phone","microwave","oven",
+    "toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear",
+    "hair drier","toothbrush"
+]
+
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="YOLOv5 ONNX Detection", layout="wide")
 
@@ -33,20 +47,32 @@ def postprocess(predictions, original_image):
     scores = []
     class_ids = []
 
-    pred = predictions[0][0]  # (1, 25200, 85)
+    pred = predictions[0]
+
+    # If shape is (1, 85, 25200), transpose it
+    if pred.shape[1] == 85:
+        pred = np.transpose(pred, (0, 2, 1))
+
+    pred = pred[0]  # remove batch
 
     img_h, img_w = original_image.shape[:2]
 
     for det in pred:
+        if len(det) < 6:
+            continue
+
         obj_conf = det[4]
         class_scores = det[5:]
+
+        if len(class_scores) == 0:
+            continue
+
         class_id = np.argmax(class_scores)
         confidence = obj_conf * class_scores[class_id]
 
         if confidence > confidence_threshold:
             x, y, w, h = det[0:4]
 
-            # Scale back to original image size (we resized to 640)
             x = x * img_w / 640
             y = y * img_h / 640
             w = w * img_w / 640
@@ -61,23 +87,24 @@ def postprocess(predictions, original_image):
             scores.append(float(confidence))
             class_ids.append(class_id)
 
-    indices = cv2.dnn.NMSBoxes(boxes, scores, confidence_threshold, 0.4)
+    if len(boxes) > 0:
+        indices = cv2.dnn.NMSBoxes(boxes, scores, confidence_threshold, 0.4)
 
-    if len(indices) > 0:
-        for i in indices.flatten():
-            x, y, w, h = boxes[i]
-            label = f"Class {class_ids[i]}: {scores[i]:.2f}"
+        if len(indices) > 0:
+            for i in indices.flatten():
+                x, y, w, h = boxes[i]
+                label = f"{class_names[class_ids[i]]}: {scores[i]:.2f}"
 
-            cv2.rectangle(original_image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(
-                original_image,
-                label,
-                (x, y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 255, 0),
-                2
-            )
+                cv2.rectangle(original_image, (x, y), (x+w, y+h), (0,255,0), 2)
+                cv2.putText(
+                    original_image,
+                    label,
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0,255,0),
+                    2
+                )
 
     return original_image
 
